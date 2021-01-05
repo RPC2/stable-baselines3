@@ -57,18 +57,23 @@ class VecFrameStack(VecEnvWrapper):
         assert isinstance(observations, np.ndarray)
         stack_ax_size = observations.shape[self.stack_dimension]
         self.stackedobs = np.roll(self.stackedobs, shift=-stack_ax_size, axis=self.stack_dimension)
+        infos = list(infos)  # so we don't manipulate infos in-place
         for i, done in enumerate(dones):
             if done:
                 if "terminal_observation" in infos[i]:
                     old_terminal = infos[i]["terminal_observation"]
                     if self.channels_first:
-                        new_terminal = np.concatenate(
-                            (self.stackedobs[i, :-stack_ax_size, ...], old_terminal), axis=self.stack_dimension
+                        # we use i:i+1 and None for batch axis indices so that
+                        # self.stack_dimension is still valid (stack_dimensin=0
+                        # is meant to refer to the batch axis)
+                        new_terminal, = np.concatenate(
+                            (self.stackedobs[i:i + 1, :-stack_ax_size, ...], old_terminal[None]), axis=self.stack_dimension
                         )
                     else:
-                        new_terminal = np.concatenate(
-                            (self.stackedobs[i, ..., :-stack_ax_size], old_terminal), axis=self.stack_dimension
+                        new_terminal, = np.concatenate(
+                            (self.stackedobs[i:i + 1, ..., :-stack_ax_size], old_terminal[None]), axis=self.stack_dimension
                         )
+                    infos[i] = dict(infos[i])  # don't manipulate in-place
                     infos[i]["terminal_observation"] = new_terminal
                 else:
                     warnings.warn("VecFrameStack wrapping a VecEnv without terminal_observation info")

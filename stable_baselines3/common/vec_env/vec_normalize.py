@@ -123,6 +123,15 @@ class VecNormalize(VecEnvWrapper):
 
         obs = self.normalize_obs(obs)
 
+        # terminal_observation doesn't count towards running mean, but we still
+        # normalize it
+        infos = list(infos)
+        for idx, info in enumerate(infos):
+            term_obs = info.get("terminal_observation")
+            if term_obs is not None:
+                infos[idx] = dict(info)
+                infos[idx]["terminal_observation"] = self.transpose_image(term_obs)
+
         if self.training:
             self._update_reward(rews)
         rews = self.normalize_reward(rews)
