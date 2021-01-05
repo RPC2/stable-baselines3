@@ -130,7 +130,7 @@ class VecNormalize(VecEnvWrapper):
             term_obs = info.get("terminal_observation")
             if term_obs is not None:
                 infos[idx] = dict(info)
-                infos[idx]["terminal_observation"] = self.transpose_image(term_obs)
+                infos[idx]["terminal_observation"] = self.normalize_obs(term_obs)
 
         if self.training:
             self._update_reward(rews)

@@ -1,5 +1,5 @@
 import multiprocessing as mp
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 from typing import Any, Callable, List, Optional, Sequence, Tuple, Type, Union
 
 import gym
@@ -15,45 +15,58 @@ from stable_baselines3.common.vec_env.base_vec_env import (
 
 
 def _worker(
-    remote: mp.connection.Connection, parent_remote: mp.connection.Connection, env_fn_wrapper: CloudpickleWrapper
+    remote: mp.connection.Connection, parent_remote: mp.connection.Connection, env_fn_wrappers: CloudpickleWrapper
 ) -> None:
     # Import here to avoid a circular import
     from stable_baselines3.common.env_util import is_wrapped
 
     parent_remote.close()
-    env = env_fn_wrapper.var()
+    envs = [env_fn() for env_fn in env_fn_wrappers.var]
     while True:
         try:
             cmd, data = remote.recv()
             if cmd == "step":
-                observation, reward, done, info = env.step(data)
-                if done:
-                    # save final observation where user can get it, then reset
-                    info["terminal_observation"] = observation
-                    observation = env.reset()
-                remote.send((observation, reward, done, info))
+                observations = []
+                rewards = []
+                dones = []
+                infos = []
+                for env in envs:
+                    observation, reward, done, info = env.step(data)
+                    if done:
+                        # save final observation where user can get it, then reset
+                        info["terminal_observation"] = observation
+                        observation = env.reset()
+                    observations.append(observation)
+                    rewards.append(reward)
+                    dones.append(done)
+                    infos.append(info)
+                remote.send((observations, rewards, dones, infos))
             elif cmd == "seed":
-                remote.send(env.seed(data))
+                remote.send([env.seed(data) for env in envs])
             elif cmd == "reset":
-                observation = env.reset()
-                remote.send(observation)
+                remote.send([env.reset() for env in envs])
             elif cmd == "render":
-                remote.send(env.render(data))
+                remote.send([env.render(data) for env in envs])
             elif cmd == "close":
-                env.close()
+                for env in envs:
+                    env.close()
                 remote.close()
                 break
             elif cmd == "get_spaces":
-                remote.send((env.observation_space, env.action_space))
+                remote.send([(env.observation_space, env.action_space) for env in envs])
             elif cmd == "env_method":
-                method = getattr(env, data[0])
-                remote.send(method(*data[1], **data[2]))
+                results = []
+                for env_idx in data[0]:
+                    env = envs[env_idx]
+                    method = getattr(env, data[1])
+                    results.append(method(*data[2], **data[3]))
+                remote.send(results)
             elif cmd == "get_attr":
-                remote.send(getattr(env, data))
+                remote.send([getattr(envs[env_idx], data[1]) for env_idx in data[0]])
             elif cmd == "set_attr":
-                remote.send(setattr(env, data[0], data[1]))
+                remote.send([setattr(envs[env_idx], data[1], data[2]) for env_idx in data[0]])
             elif cmd == "is_wrapped":
-                remote.send(is_wrapped(env, data))
+                remote.send([is_wrapped(envs[env_idx], data[1]) for env_idx in data[0]])
             else:
                 raise NotImplementedError(f"`{cmd}` is not implemented in the worker")
         except EOFError:
@@ -62,11 +75,11 @@ def _worker(
 
 class SubprocVecEnv(VecEnv):
     """
-    Creates a multiprocess vectorized wrapper for multiple environments, distributing each environment to its own
-    process, allowing significant speed up when the environment is computationally complex.
+    Creates a multiprocess vectorized wrapper for multiple environments, distributing environments to different processes and
+    thus allowing a significant speed up when the environment is computationally complex.
 
-    For performance reasons, if your environment is not IO bound, the number of environments should not exceed the
-    number of logical cores on your CPU.
+    For performance reasons, if your environment is not IO bound, the number of workers should not exceed the number of logical
+    cores on your CPU.
 
     .. warning::
 
@@ -82,12 +95,26 @@ class SubprocVecEnv(VecEnv):
     :param start_method: method used to start the subprocesses.
            Must be one of the methods returned by multiprocessing.get_all_start_methods().
            Defaults to 'forkserver' on available platforms, and 'spawn' otherwise.
+    :param n_workers: Number of worker processes to spawn and distribute environments among. If None, we spawn one process per
+           environment.
     """
 
-    def __init__(self, env_fns: List[Callable[[], gym.Env]], start_method: Optional[str] = None):
+    def __init__(self, env_fns: List[Callable[[], gym.Env]], start_method: Optional[str] = None,
+                 n_workers: Optional[int] = None):
         self.waiting = False
         self.closed = False
         n_envs = len(env_fns)
+        if n_workers is None:
+            n_workers = n_envs
+        if n_envs % n_workers != 0 or not (0 < n_workers <= n_envs):
+            raise ValueError(f"n_envs (={n_envs}) must be a positive multiple of n_workers (={n_workers})")
+        # this should support uneven partitions of environments, but uneven
+        # partitioning will be bad for core utilisation
+        env_fns_grouped = np.array_split(np.array(env_fns, dtype='object'), n_workers)
+        self._remote_for_env = {}
+        for group_idx, group in enumerate(env_fns_grouped):
+            for sub_idx in range(len(group)):
+                self._remote_for_env[len(self._remote_for_env)] = (group_idx, sub_idx)
 
         if start_method is None:
             # Fork is not a thread safe method (see issue #217)
@@ -97,10 +124,10 @@ class SubprocVecEnv(VecEnv):
             start_method = "forkserver" if forkserver_available else "spawn"
         ctx = mp.get_context(start_method)
 
-        self.remotes, self.work_remotes = zip(*[ctx.Pipe() for _ in range(n_envs)])
+        self.remotes, self.work_remotes = zip(*[ctx.Pipe() for _ in range(n_workers)])
         self.processes = []
-        for work_remote, remote, env_fn in zip(self.work_remotes, self.remotes, env_fns):
-            args = (work_remote, remote, CloudpickleWrapper(env_fn))
+        for work_remote, remote, env_fn_list in zip(self.work_remotes, self.remotes, env_fns_grouped):
+            args = (work_remote, remote, CloudpickleWrapper(env_fn_list))
             # daemon=True: if the main process crashes, we should not cause things to hang
             process = ctx.Process(target=_worker, args=args, daemon=True)  # pytype:disable=attribute-error
             process.start()
@@ -108,7 +135,7 @@ class SubprocVecEnv(VecEnv):
             work_remote.close()
 
         self.remotes[0].send(("get_spaces", None))
-        observation_space, action_space = self.remotes[0].recv()
+        observation_space, action_space = self.remotes[0].recv()[0]
         VecEnv.__init__(self, len(env_fns), observation_space, action_space)
 
     def step_async(self, actions: np.ndarray) -> None:
@@ -119,18 +146,20 @@ class SubprocVecEnv(VecEnv):
     def step_wait(self) -> VecEnvStepReturn:
         results = [remote.recv() for remote in self.remotes]
         self.waiting = False
-        obs, rews, dones, infos = zip(*results)
+        # each remote returns a tuple of lists, like: ([ob1, obs2, …], [rew1,
+        # rew2, …], [done1, done2, …], [info1, info2, …])
+        obs, rews, dones, infos = [sum(l, []) for l in zip(*results)]
         return _flatten_obs(obs, self.observation_space), np.stack(rews), np.stack(dones), infos
 
     def seed(self, seed: Optional[int] = None) -> List[Union[None, int]]:
         for idx, remote in enumerate(self.remotes):
             remote.send(("seed", seed + idx))
-        return [remote.recv() for remote in self.remotes]
+        return sum((remote.recv() for remote in self.remotes), [])
 
     def reset(self) -> VecEnvObs:
         for remote in self.remotes:
             remote.send(("reset", None))
-        obs = [remote.recv() for remote in self.remotes]
+        obs = sum((remote.recv() for remote in self.remotes), [])
         return _flatten_obs(obs, self.observation_space)
 
     def close(self) -> None:
@@ -150,37 +179,37 @@ class SubprocVecEnv(VecEnv):
             # gather images from subprocesses
             # `mode` will be taken into account later
             pipe.send(("render", "rgb_array"))
-        imgs = [pipe.recv() for pipe in self.remotes]
+        imgs = sum((pipe.recv() for pipe in self.remotes), [])
         return imgs
 
     def get_attr(self, attr_name: str, indices: VecEnvIndices = None) -> List[Any]:
         """Return attribute from vectorized environment (see base class)."""
-        target_remotes = self._get_target_remotes(indices)
-        for remote in target_remotes:
-            remote.send(("get_attr", attr_name))
-        return [remote.recv() for remote in target_remotes]
+        target_remotes_and_inds = self._get_target_remotes(indices)
+        for remote, remote_inds in target_remotes_and_inds:
+            remote.send(("get_attr", (remote_inds, attr_name)))
+        return sum((remote.recv() for remote, _ in target_remotes_and_inds), [])
 
     def set_attr(self, attr_name: str, value: Any, indices: VecEnvIndices = None) -> None:
         """Set attribute inside vectorized environments (see base class)."""
-        target_remotes = self._get_target_remotes(indices)
-        for remote in target_remotes:
-            remote.send(("set_attr", (attr_name, value)))
-        for remote in target_remotes:
+        target_remotes_and_inds = self._get_target_remotes(indices)
+        for remote, remote_inds in target_remotes_and_inds:
+            remote.send(("set_attr", (remote_inds, attr_name, value)))
+        for remote, _ in target_remotes_and_inds:
             remote.recv()
 
     def env_method(self, method_name: str, *method_args, indices: VecEnvIndices = None, **method_kwargs) -> List[Any]:
         """Call instance methods of vectorized environments."""
-        target_remotes = self._get_target_remotes(indices)
-        for remote in target_remotes:
-            remote.send(("env_method", (method_name, method_args, method_kwargs)))
-        return [remote.recv() for remote in target_remotes]
+        target_remotes_and_inds = self._get_target_remotes(indices)
+        for remote, remote_inds in target_remotes_and_inds:
+            remote.send(("env_method", (remote_inds, method_name, method_args, method_kwargs)))
+        return sum((remote.recv() for remote, _ in target_remotes_and_inds), [])
 
     def env_is_wrapped(self, wrapper_class: Type[gym.Wrapper], indices: VecEnvIndices = None) -> List[bool]:
         """Check if worker environments are wrapped with a given wrapper"""
-        target_remotes = self._get_target_remotes(indices)
-        for remote in target_remotes:
-            remote.send(("is_wrapped", wrapper_class))
-        return [remote.recv() for remote in target_remotes]
+        target_remotes_and_inds = self._get_target_remotes(indices)
+        for remote, remote_inds in target_remotes_and_inds:
+            remote.send(("is_wrapped", (remote_inds, wrapper_class)))
+        return sum((remote.recv() for remote, _ in target_remotes_and_inds), [])
 
     def _get_target_remotes(self, indices: VecEnvIndices) -> List[Any]:
         """
@@ -191,7 +220,11 @@ class SubprocVecEnv(VecEnv):
         :return: Connection object to communicate between processes.
         """
         indices = self._get_indices(indices)
-        return [self.remotes[i] for i in indices]
+        sub_inds_by_remote = defaultdict(list)
+        for ind in indices:
+            remote_ind, sub_index = self._remote_for_env[ind]
+            sub_inds_by_remote.setdefault(remote_ind, []).append(sub_index)
+        return [(self.remotes[i], sub_indices) for i, sub_indices in sub_inds_by_remote.items()]
 
 
 def _flatten_obs(obs: Union[List[VecEnvObs], Tuple[VecEnvObs]], space: gym.spaces.Space) -> VecEnvObs:
