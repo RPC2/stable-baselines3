@@ -255,6 +255,7 @@ class PPO(OnPolicyAlgorithm):
         tb_log_name: str = "PPO",
         eval_log_path: Optional[str] = None,
         reset_num_timesteps: bool = True,
+        **kwargs,
     ) -> "PPO":
 
         return super(PPO, self).learn(
@@ -267,4 +268,5 @@ class PPO(OnPolicyAlgorithm):
             tb_log_name=tb_log_name,
             eval_log_path=eval_log_path,
             reset_num_timesteps=reset_num_timesteps,
+            **kwargs,
         )

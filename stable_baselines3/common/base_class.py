@@ -353,11 +353,12 @@ class BaseAlgorithm(ABC):
         :param eval_freq: How many steps between evaluations
         :param n_eval_episodes: How many episodes to play per evaluation
         :param log_path: Path to a folder where the evaluations will be saved
-        :param reset_num_timesteps: Whether to reset or not the ``num_timesteps`` attribute
+        :param reset_num_timesteps: Whether to reset or not the
+            ``num_timesteps`` attribute and related tracking information (e.g.
+            start time, episode number).
         :param tb_log_name: the name of the run for tensorboard log
         :return:
         """
-        self.start_time = time.time()
         if self.ep_info_buffer is None or reset_num_timesteps:
             # Initialize buffers if they don't exist, or reinitialize if resetting counters
             self.ep_info_buffer = deque(maxlen=100)
@@ -365,6 +366,9 @@ class BaseAlgorithm(ABC):
 
         if self.action_noise is not None:
             self.action_noise.reset()
+
+        if reset_num_timesteps or self.start_time is None:
+            self.start_time = time.time()
 
         if reset_num_timesteps:
             self.num_timesteps = 0

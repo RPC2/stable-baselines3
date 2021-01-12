@@ -23,6 +23,8 @@ class VecNormalize(VecEnvWrapper):
     :param clip_reward: Max value absolute for discounted reward
     :param gamma: discount factor
     :param epsilon: To avoid division by zero
+    :param norm_reward_std: Target standard deviation for reward when
+        `norm_reward is True` (default: 1.0).
     """
 
     def __init__(
@@ -35,6 +37,7 @@ class VecNormalize(VecEnvWrapper):
         clip_reward: float = 10.0,
         gamma: float = 0.99,
         epsilon: float = 1e-8,
+        norm_reward_std: float = 1.0,
     ):
         VecEnvWrapper.__init__(self, venv)
 
@@ -53,6 +56,7 @@ class VecNormalize(VecEnvWrapper):
         self.ret_rms = RunningMeanStd(shape=())
         self.clip_obs = clip_obs
         self.clip_reward = clip_reward
+        self.norm_reward_std = 1.0
         # Returns: discounted rewards
         self.ret = np.zeros(self.num_envs)
         self.gamma = gamma
@@ -183,7 +187,8 @@ class VecNormalize(VecEnvWrapper):
         Calling this method does not update statistics.
         """
         if self.norm_reward:
-            reward = np.clip(reward / np.sqrt(self.ret_rms.var + self.epsilon), -self.clip_reward, self.clip_reward)
+            reward = np.clip(reward / np.sqrt(self.ret_rms.var + self.epsilon) * self.norm_reward_std,
+                             -self.clip_reward, self.clip_reward)
         return reward
 
     def unnormalize_obs(self, obs: Union[np.ndarray, Dict[str, np.ndarray]]) -> Union[np.ndarray, Dict[str, np.ndarray]]:
