@@ -214,18 +214,12 @@ class OnPolicyAlgorithm(BaseAlgorithm):
         eval_log_path: Optional[str] = None,
         reset_num_timesteps: bool = True,
         dump_logs: bool = True,
-        progress_max_timesteps: Optional[int] = None,
     ) -> "OnPolicyAlgorithm":
         iteration = 0
 
         total_timesteps, callback = self._setup_learn(
             total_timesteps, eval_env, callback, eval_freq, n_eval_episodes, eval_log_path, reset_num_timesteps, tb_log_name
         )
-
-        if progress_max_timesteps is None:
-            assert not reset_num_timesteps, \
-                "if using reset_num_timesteps, you should provide progress_max_timesteps too"
-            progress_max_timesteps = total_timesteps
 
         callback.on_training_start(locals(), globals())
 
@@ -237,7 +231,7 @@ class OnPolicyAlgorithm(BaseAlgorithm):
                 break
 
             iteration += 1
-            self._update_current_progress_remaining(self.num_timesteps, progress_max_timesteps)
+            self._update_current_progress_remaining(self.num_timesteps, total_timesteps)
 
             # Display training infos
             if log_interval is not None and iteration % log_interval == 0:
