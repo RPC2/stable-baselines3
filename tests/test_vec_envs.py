@@ -10,8 +10,8 @@ import pytest
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecFrameStack, VecNormalize
 
-N_ENVS = 4
-VEC_ENV_CLASSES = [DummyVecEnv, SubprocVecEnv, functools.partial(SubprocVecEnv, n_workers=2)]
+N_ENVS = 3
+VEC_ENV_CLASSES = [DummyVecEnv, SubprocVecEnv]
 VEC_ENV_WRAPPERS = [None, VecNormalize, VecFrameStack]
 
 

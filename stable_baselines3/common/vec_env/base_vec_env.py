@@ -234,15 +234,7 @@ class VecEnv(ABC):
             indices = range(self.num_envs)
         elif isinstance(indices, int):
             indices = [indices]
-        bounded_indices = []
-        for ind in indices:
-            if -self.num_envs <= ind < 0:
-                bounded_indices.append(self.num_envs + ind)
-            elif 0 <= ind < self.num_envs:
-                bounded_indices.append(ind)
-            else:
-                raise IndexError("index %d is out of range for list of %d elements" % (ind, self.num_envs))
-        return bounded_indices
+        return indices
 
 
 class VecEnvWrapper(VecEnv):
