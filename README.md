@@ -3,14 +3,12 @@
 [![pipeline status](https://gitlab.com/araffin/stable-baselines3/badges/master/pipeline.svg)](https://gitlab.com/araffin/stable-baselines3/-/commits/master) [![Documentation Status](https://readthedocs.org/projects/stable-baselines/badge/?version=master)](https://stable-baselines3.readthedocs.io/en/master/?badge=master) [![coverage report](https://gitlab.com/araffin/stable-baselines3/badges/master/coverage.svg)](https://gitlab.com/araffin/stable-baselines3/-/commits/master)
 [![codestyle](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
-**WARNING: Stable Baselines3 is currently in a beta version, breaking changes may occur before 1.0 is released**
-
 
 # Stable Baselines3
 
 Stable Baselines3 (SB3) is a set of reliable implementations of reinforcement learning algorithms in PyTorch. It is the next major version of [Stable Baselines](https://github.com/hill-a/stable-baselines).
 
-You can read a detailed presentation of Stable Baselines in the [Medium article](https://medium.com/@araffin/stable-baselines-a-fork-of-openai-baselines-reinforcement-learning-made-easy-df87c4b2fc82).
+You can read a detailed presentation of Stable Baselines3 in the [v1.0 blog post](https://araffin.github.io/post/sb3/).
 
 
 These algorithms will make it easier for the research community and industry to replicate, refine, and identify new ideas, and will create good baselines to build projects on top of. We expect these tools will be used as a base around which new ideas can be added, and as a tool for comparing a new approach against existing ones. We also hope that the simplicity of these tools will allow beginners to experiment with a more advanced toolset, without being buried in implementation details.
@@ -30,6 +28,7 @@ you can take a look at the issues [#48](https://github.com/DLR-RM/stable-baselin
 | Custom environments         | :heavy_check_mark: |
 | Custom policies             | :heavy_check_mark: |
 | Common interface            | :heavy_check_mark: |
+| `Dict` observation space support  | :heavy_check_mark: |
 | Ipython / Notebook friendly | :heavy_check_mark: |
 | Tensorboard support         | :heavy_check_mark: |
 | PEP8 code style             | :heavy_check_mark: |
@@ -38,7 +37,7 @@ you can take a look at the issues [#48](https://github.com/DLR-RM/stable-baselin
 | Type hints                  | :heavy_check_mark: |
 
 
-### Planned features (v1.1+)
+### Planned features
 
 Please take a look at the [Roadmap](https://github.com/DLR-RM/stable-baselines3/issues/1) and [Milestones](https://github.com/DLR-RM/stable-baselines3/milestones).
 
@@ -50,11 +49,13 @@ A migration guide from SB2 to SB3 can be found in the [documentation](https://st
 
 Documentation is available online: [https://stable-baselines3.readthedocs.io/](https://stable-baselines3.readthedocs.io/)
 
-## RL Baselines3 Zoo: A Collection of Trained RL Agents
+## RL Baselines3 Zoo: A Training Framework for Stable Baselines3 Reinforcement Learning Agents
 
-[RL Baselines3 Zoo](https://github.com/DLR-RM/rl-baselines3-zoo). is a collection of pre-trained Reinforcement Learning agents using Stable-Baselines3.
+[RL Baselines3 Zoo](https://github.com/DLR-RM/rl-baselines3-zoo) is a training framework for Reinforcement Learning (RL).
 
-It also provides basic scripts for training, evaluating agents, tuning hyperparameters, plotting results and recording videos.
+It provides scripts for training, evaluating agents, tuning hyperparameters, plotting results and recording videos.
+
+In addition, it includes a collection of tuned hyperparameters for common environments and RL algorithms, and agents trained with those settings.
 
 Goals of this repository:
 
@@ -71,14 +72,14 @@ Documentation: https://stable-baselines3.readthedocs.io/en/master/guide/rl_zoo.h
 
 We implement experimental features in a separate contrib repository: [SB3-Contrib](https://github.com/Stable-Baselines-Team/stable-baselines3-contrib)
 
-This allows SB3 to maintain a stable and compact core, while still providing the latest features, like Truncated Quantile Critics (TQC) or Quantile Regression DQN (QR-DQN).
+This allows SB3 to maintain a stable and compact core, while still providing the latest features, like Truncated Quantile Critics (TQC), Quantile Regression DQN (QR-DQN) or PPO with invalid action masking (Maskable PPO).
 
 Documentation is available online: [https://sb3-contrib.readthedocs.io/](https://sb3-contrib.readthedocs.io/)
 
 
 ## Installation
 
-**Note:** Stable-Baselines3 supports PyTorch 1.4+.
+**Note:** Stable-Baselines3 supports PyTorch >= 1.8.1.
 
 ### Prerequisites
 Stable Baselines3 requires python 3.6+.
@@ -93,6 +94,7 @@ Install the Stable Baselines3 package:
 ```
 pip install stable-baselines3[extra]
 ```
+**Note:** Some shells such as Zsh require quotation marks around brackets, i.e. `pip install 'stable-baselines3[extra]'` ([More Info](https://stackoverflow.com/a/30539963)).
 
 This includes an optional dependencies like Tensorboard, OpenCV or `atari-py` to train on atari games. If you do not need those, you can use:
 ```
@@ -112,9 +114,9 @@ import gym
 
 from stable_baselines3 import PPO
 
-env = gym.make('CartPole-v1')
+env = gym.make("CartPole-v1")
 
-model = PPO('MlpPolicy', env, verbose=1)
+model = PPO("MlpPolicy", env, verbose=1)
 model.learn(total_timesteps=10000)
 
 obs = env.reset()
@@ -165,7 +167,11 @@ All the following examples can be executed online using Google colab notebooks:
 | PPO   | :x: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark:  | :heavy_check_mark: | :heavy_check_mark:                |
 | SAC   | :x: | :heavy_check_mark: | :x:                | :x:                 | :x:                | :x:                               |
 | TD3   | :x: | :heavy_check_mark: | :x:                | :x:                 | :x:                | :x:                               |
+| QR-DQN<sup>[1](#f1)</sup>  | :x: | :x: | :heavy_check_mark: | :x:                 | :x:                | :x:                               |
+| TQC<sup>[1](#f1)</sup>   | :x: | :heavy_check_mark: | :x:                | :x:                 | :x:                | :x:                               |
+| Maskable PPO<sup>[1](#f1)</sup>   | :x: | :x: | :heavy_check_mark: | :heavy_check_mark:  | :heavy_check_mark: | :heavy_check_mark:  |
 
+<b id="f1">1</b>: Implemented in [SB3 Contrib](https://github.com/Stable-Baselines-Team/stable-baselines3-contrib) GitHub repository.
 
 Actions `gym.spaces`:
  * `Box`: A N-dimensional box that containes every point in the action space.
@@ -203,7 +209,7 @@ please tell us when if you want your project to appear on this page ;)
 
 To cite this repository in publications:
 
-```
+```bibtex
 @misc{stable-baselines3,
   author = {Raffin, Antonin and Hill, Ashley and Ernestus, Maximilian and Gleave, Adam and Kanervisto, Anssi and Dormann, Noah},
   title = {Stable Baselines3},
@@ -219,6 +225,7 @@ To cite this repository in publications:
 Stable-Baselines3 is currently maintained by [Ashley Hill](https://github.com/hill-a) (aka @hill-a), [Antonin Raffin](https://araffin.github.io/) (aka [@araffin](https://github.com/araffin)), [Maximilian Ernestus](https://github.com/ernestum) (aka @ernestum), [Adam Gleave](https://github.com/adamgleave) (@AdamGleave) and [Anssi Kanervisto](https://github.com/Miffyli) (@Miffyli).
 
 **Important Note: We do not do technical support, nor consulting** and don't answer personal questions per email.
+Please post your question on the [RL Discord](https://discord.com/invite/xhfNqQv), [Reddit](https://www.reddit.com/r/reinforcementlearning/) or [Stack Overflow](https://stackoverflow.com/) in that case.
 
 
 ## How To Contribute

@@ -6,7 +6,7 @@ title: "[Bug] bug title"
 ---
 
 **Important Note: We do not do technical support, nor consulting** and don't answer personal questions per email.
-Please post your question on [reddit](https://www.reddit.com/r/reinforcementlearning/) or [stack overflow](https://stackoverflow.com/) in that case.
+Please post your question on the [RL Discord](https://discord.com/invite/xhfNqQv), [Reddit](https://www.reddit.com/r/reinforcementlearning/) or [Stack Overflow](https://stackoverflow.com/) in that case.
 
 
 If your issue is related to a **custom gym environment**, please use the custom gym env template.
@@ -49,6 +49,12 @@ Describe the characteristic of your environment:
  * PyTorch version
  * Gym version
  * Versions of any other relevant libraries
+
+You can use `sb3.get_system_info()` to print relevant packages info:
+```python
+import stable_baselines3 as sb3
+sb3.get_system_info()
+```
 
 ### Additional context
 Add any other context about the problem here.

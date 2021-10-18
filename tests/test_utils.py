@@ -6,13 +6,14 @@ import numpy as np
 import pytest
 import torch as th
 
-from stable_baselines3 import A2C
-from stable_baselines3.common.atari_wrappers import ClipRewardEnv
+import stable_baselines3 as sb3
+from stable_baselines3 import A2C, PPO
+from stable_baselines3.common.atari_wrappers import ClipRewardEnv, MaxAndSkipEnv
 from stable_baselines3.common.env_util import is_wrapped, make_atari_env, make_vec_env, unwrap_wrapper
 from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.noise import ActionNoise, OrnsteinUhlenbeckActionNoise, VectorizedActionNoise
-from stable_baselines3.common.utils import polyak_update, zip_strict
+from stable_baselines3.common.utils import get_system_info, polyak_update, zip_strict
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 
 
@@ -70,6 +71,11 @@ def test_vec_env_kwargs():
     assert env.get_attr("goal_velocity")[0] == 0.11
 
 
+def test_vec_env_wrapper_kwargs():
+    env = make_vec_env("MountainCarContinuous-v0", n_envs=1, seed=0, wrapper_class=MaxAndSkipEnv, wrapper_kwargs={"skip": 3})
+    assert env.get_attr("_skip")[0] == 3
+
+
 def test_vec_env_monitor_kwargs():
     env = make_vec_env("MountainCarContinuous-v0", n_envs=1, seed=0, monitor_kwargs={"allow_early_resets": False})
     assert env.get_attr("allow_early_resets")[0] is False
@@ -80,7 +86,12 @@ def test_vec_env_monitor_kwargs():
     env = make_vec_env("MountainCarContinuous-v0", n_envs=1, seed=0, monitor_kwargs={"allow_early_resets": True})
     assert env.get_attr("allow_early_resets")[0] is True
 
-    env = make_atari_env("BreakoutNoFrameskip-v4", n_envs=1, seed=0, monitor_kwargs={"allow_early_resets": True})
+    env = make_atari_env(
+        "BreakoutNoFrameskip-v4",
+        n_envs=1,
+        seed=0,
+        monitor_kwargs={"allow_early_resets": True},
+    )
     assert env.get_attr("allow_early_resets")[0] is True
 
 
@@ -187,11 +198,37 @@ class AlwaysDoneWrapper(gym.Wrapper):
         return self.last_obs
 
 
+@pytest.mark.parametrize("n_envs", [1, 2, 5, 7])
+def test_evaluate_vector_env(n_envs):
+    # Tests that the number of episodes evaluated is correct
+    n_eval_episodes = 6
+
+    env = make_vec_env("CartPole-v1", n_envs)
+    model = A2C("MlpPolicy", "CartPole-v1", seed=0)
+
+    class CountCallback:
+        def __init__(self):
+            self.count = 0
+
+        def __call__(self, locals_, globals_):
+            if locals_["done"]:
+                self.count += 1
+
+    count_callback = CountCallback()
+
+    evaluate_policy(model, env, n_eval_episodes, callback=count_callback)
+
+    assert count_callback.count == n_eval_episodes
+
+
 @pytest.mark.parametrize("vec_env_class", [None, DummyVecEnv, SubprocVecEnv])
 def test_evaluate_policy_monitors(vec_env_class):
+    # Make numpy warnings throw exception
+    np.seterr(all="raise")
     # Test that results are correct with monitor environments.
     # Also test VecEnvs
-    n_eval_episodes = 2
+    n_eval_episodes = 3
+    n_envs = 2
     env_id = "CartPole-v0"
     model = A2C("MlpPolicy", env_id, seed=0)
 
@@ -207,9 +244,9 @@ def test_evaluate_policy_monitors(vec_env_class):
             env = wrapper_class(env)
         else:
             if with_monitor:
-                env = vec_env_class([lambda: wrapper_class(Monitor(gym.make(env_id)))])
+                env = vec_env_class([lambda: wrapper_class(Monitor(gym.make(env_id)))] * n_envs)
             else:
-                env = vec_env_class([lambda: wrapper_class(gym.make(env_id))])
+                env = vec_env_class([lambda: wrapper_class(gym.make(env_id))] * n_envs)
         return env
 
     # Test that evaluation with VecEnvs works as expected
@@ -316,12 +353,6 @@ def test_zip_strict():
         pass
 
 
-def test_cmd_util_rename():
-    """Test that importing cmd_util still works but raises warning"""
-    with pytest.warns(FutureWarning):
-        from stable_baselines3.common.cmd_util import make_vec_env  # noqa: F401
-
-
 def test_is_wrapped():
     """Test that is_wrapped correctly detects wraps"""
     env = gym.make("Pendulum-v0")
@@ -333,3 +364,26 @@ def test_is_wrapped():
     assert is_wrapped(env, Monitor)
     # Test that unwrap works as expected
     assert unwrap_wrapper(env, Monitor) == monitor_env
+
+
+def test_ppo_warnings():
+    """Test that PPO warns and errors correctly on
+    problematic rollour buffer sizes"""
+
+    # Only 1 step: advantage normalization will return NaN
+    with pytest.raises(AssertionError):
+        PPO("MlpPolicy", "Pendulum-v0", n_steps=1)
+
+    # Truncated mini-batch
+    with pytest.warns(UserWarning):
+        PPO("MlpPolicy", "Pendulum-v0", n_steps=6, batch_size=8)
+
+
+def test_get_system_info():
+    info, info_str = get_system_info(print_info=True)
+    assert info["Stable-Baselines3"] == str(sb3.__version__)
+    assert "Python" in info_str
+    assert "PyTorch" in info_str
+    assert "GPU Enabled" in info_str
+    assert "Numpy" in info_str
+    assert "Gym" in info_str

@@ -8,9 +8,15 @@ That is to say, your environment must implement the following methods (and inher
 
 
 .. note::
-	If you are using images as input, the input values must be in [0, 255] and np.uint8 as the observation
+	If you are using images as input, the observation must be of type ``np.uint8`` and be contained in [0, 255]
 	is normalized (dividing by 255 to have values in [0, 1]) when using CNN policies. Images can be either
 	channel-first or channel-last.
+
+
+.. note::
+
+  Although SB3 supports both channel-last and channel-first images as input, we recommend using the channel-first convention when possible.
+  Under the hood, when a channel-last image is passed, SB3 uses a ``VecTransposeImage`` wrapper to re-order the channels.
 
 
 
@@ -29,9 +35,9 @@ That is to say, your environment must implement the following methods (and inher
       # They must be gym.spaces objects
       # Example when using discrete actions:
       self.action_space = spaces.Discrete(N_DISCRETE_ACTIONS)
-      # Example for using image as input (can be channel-first or channel-last):
+      # Example for using image as input (channel-first; channel-last also works):
       self.observation_space = spaces.Box(low=0, high=255,
-                                          shape=(HEIGHT, WIDTH, N_CHANNELS), dtype=np.uint8)
+                                          shape=(N_CHANNELS, HEIGHT, WIDTH), dtype=np.uint8)
 
     def step(self, action):
       ...
@@ -70,14 +76,29 @@ To check that your environment follows the gym interface, please use:
 We have created a `colab notebook <https://colab.research.google.com/github/araffin/rl-tutorial-jnrr19/blob/master/5_custom_gym_env.ipynb>`_ for
 a concrete example of creating a custom environment.
 
-You can also find a `complete guide online <https://github.com/openai/gym/blob/master/docs/creating-environments.md>`_
+You can also find a `complete guide online <https://github.com/openai/gym/blob/master/docs/creating_environments.md>`_
 on creating a custom Gym environment.
 
 
 Optionally, you can also register the environment with gym,
-that will allow you to create the RL agent in one line (and use ``gym.make()`` to instantiate the env).
+that will allow you to create the RL agent in one line (and use ``gym.make()`` to instantiate the env):
+
+.. code-block:: python
+
+	from gym.envs.registration import register
+	# Example for the CartPole environment
+	register(
+	    # unique identifier for the env `name-version`
+	    id="CartPole-v1",
+	    # path to the class for creating the env
+	    # Note: entry_point also accept a class as input (and not only a string)
+	    entry_point="gym.envs.classic_control:CartPoleEnv",
+	    # Max number of steps per episode, using a `TimeLimitWrapper`
+	    max_episode_steps=500,
+	)
+
 
 
 In the project, for testing purposes, we use a custom environment named ``IdentityEnv``
-defined `in this file <https://github.com/hill-a/stable-baselines/blob/master/stable_baselines/common/identity_env.py>`_.
-An example of how to use it can be found `here <https://github.com/hill-a/stable-baselines/blob/master/tests/test_identity.py>`_.
+defined `in this file <https://github.com/DLR-RM/stable-baselines3/blob/master/stable_baselines3/common/envs/identity_env.py>`_.
+An example of how to use it can be found `here <https://github.com/DLR-RM/stable-baselines3/blob/master/tests/test_identity.py>`_.

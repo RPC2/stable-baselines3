@@ -81,6 +81,85 @@ Here is a simple example on how to log both additional tensor or arbitrary scala
 
     model.learn(50000, callback=TensorboardCallback())
 
+
+.. note::
+
+  If you want to log values more often than the default to tensorboard, you manually call ``self.logger.dump(self.num_timesteps)`` in a callback
+  (see `issue #506 <https://github.com/DLR-RM/stable-baselines3/issues/506>`_).
+
+
+Logging Images
+--------------
+
+TensorBoard supports periodic logging of image data, which helps evaluating agents at various stages during training.
+
+.. warning::
+    To support image logging `pillow <https://github.com/python-pillow/Pillow>`_ must be installed otherwise, TensorBoard ignores the image and logs a warning.
+
+Here is an example of how to render an image to TensorBoard at regular intervals:
+
+.. code-block:: python
+
+    from stable_baselines3 import SAC
+    from stable_baselines3.common.callbacks import BaseCallback
+    from stable_baselines3.common.logger import Image
+
+    model = SAC("MlpPolicy", "Pendulum-v0", tensorboard_log="/tmp/sac/", verbose=1)
+
+
+    class ImageRecorderCallback(BaseCallback):
+        def __init__(self, verbose=0):
+            super(ImageRecorderCallback, self).__init__(verbose)
+
+        def _on_step(self):
+            image = self.training_env.render(mode="rgb_array")
+            # "HWC" specify the dataformat of the image, here channel last
+            # (H for height, W for width, C for channel)
+            # See https://pytorch.org/docs/stable/tensorboard.html
+            # for supported formats
+            self.logger.record("trajectory/image", Image(image, "HWC"), exclude=("stdout", "log", "json", "csv"))
+            return True
+
+
+    model.learn(50000, callback=ImageRecorderCallback())
+
+Logging Figures/Plots
+---------------------
+TensorBoard supports periodic logging of figures/plots created with matplotlib, which helps evaluating agents at various stages during training.
+
+.. warning::
+    To support figure logging `matplotlib <https://matplotlib.org/>`_ must be installed otherwise, TensorBoard ignores the figure and logs a warning.
+
+Here is an example of how to store a plot in TensorBoard at regular intervals:
+
+.. code-block:: python
+
+    import numpy as np
+    import matplotlib.pyplot as plt
+
+    from stable_baselines3 import SAC
+    from stable_baselines3.common.callbacks import BaseCallback
+    from stable_baselines3.common.logger import Figure
+
+    model = SAC("MlpPolicy", "Pendulum-v0", tensorboard_log="/tmp/sac/", verbose=1)
+
+
+    class FigureRecorderCallback(BaseCallback):
+        def __init__(self, verbose=0):
+            super(FigureRecorderCallback, self).__init__(verbose)
+
+        def _on_step(self):
+            # Plot values (here a random variable)
+            figure = plt.figure()
+            figure.add_subplot().plot(np.random.random(3))
+            # Close the figure after logging it
+            self.logger.record("trajectory/figure", Figure(figure, close=True), exclude=("stdout", "log", "json", "csv"))
+            plt.close()
+            return True
+
+
+    model.learn(50000, callback=FigureRecorderCallback())
+
 Logging Videos
 --------------
 
@@ -153,3 +232,42 @@ Here is an example of how to render an episode and log the resulting video to Te
     model = A2C("MlpPolicy", "CartPole-v1", tensorboard_log="runs/", verbose=1)
     video_recorder = VideoRecorderCallback(gym.make("CartPole-v1"), render_freq=5000)
     model.learn(total_timesteps=int(5e4), callback=video_recorder)
+
+
+Directly Accessing The Summary Writer
+-------------------------------------
+
+If you would like to log arbitrary data (in one of the formats supported by `pytorch <https://pytorch.org/docs/stable/tensorboard.html>`_), you
+can get direct access to the underlying SummaryWriter in a callback:
+
+.. warning::
+    This is method is not recommended and should only be used by advanced users.
+
+.. code-block:: python
+
+    from stable_baselines3 import SAC
+    from stable_baselines3.common.callbacks import BaseCallback
+    from stable_baselines3.common.logger import TensorBoardOutputFormat
+
+
+
+    model = SAC("MlpPolicy", "Pendulum-v0", tensorboard_log="/tmp/sac/", verbose=1)
+
+
+    class SummaryWriterCallback(BaseCallback):
+
+        def _on_training_start(self):
+            self._log_freq = 1000  # log every 1000 calls
+
+            output_formats = self.logger.Logger.CURRENT.output_formats
+            # Save reference to tensorboard formatter object
+            # note: the failure case (not formatter found) is not handled here, should be done with try/except.
+            self.tb_formatter = next(formatter for formatter in output_formats if isinstance(formatter, TensorBoardOutputFormat))
+
+        def _on_step(self) -> bool:
+            if self.n_calls % self._log_freq == 0:
+                self.tb_formatter.writer.add_text("direct_access", "this is a value", self.num_timesteps)
+                self.tb_formatter.writer.flush()
+
+
+    model.learn(50000, callback=SummaryWriterCallback())

@@ -6,7 +6,7 @@ Installation
 Prerequisites
 -------------
 
-Stable-Baselines3 requires python 3.6+.
+Stable-Baselines3 requires python 3.6+ and PyTorch >= 1.8.1.
 
 Windows 10
 ~~~~~~~~~~
@@ -29,11 +29,21 @@ To install Stable Baselines3 with pip, execute:
 
     pip install stable-baselines3[extra]
 
+.. note::
+        Some shells such as Zsh require quotation marks around brackets, i.e. ``pip install 'stable-baselines3[extra]'`` `More information <https://stackoverflow.com/a/30539963>`_.
+
+
 This includes an optional dependencies like Tensorboard, OpenCV or ``atari-py`` to train on atari games. If you do not need those, you can use:
 
 .. code-block:: bash
 
     pip install stable-baselines3
+
+
+.. note::
+
+  If you need to work with OpenCV on a machine without a X-server (for instance inside a docker image),
+  you will need to install ``opencv-python-headless``, see `issue #298 <https://github.com/DLR-RM/stable-baselines3/issues/298>`_.
 
 
 Bleeding-edge version

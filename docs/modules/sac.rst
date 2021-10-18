@@ -19,6 +19,7 @@ A key feature of SAC, and a major difference with common RL algorithms, is that 
 
     MlpPolicy
     CnnPolicy
+    MultiInputPolicy
 
 
 Notes
@@ -56,11 +57,14 @@ Discrete      ❌      ✔️
 Box           ✔️       ✔️
 MultiDiscrete ❌      ✔️
 MultiBinary   ❌      ✔️
+Dict          ❌     ✔️
 ============= ====== ===========
 
 
 Example
 -------
+
+This example is only to demonstrate the use of the library and its functions, and the trained agents may not solve the environments. Optimized hyperparameters can be found in RL Zoo `repository <https://github.com/DLR-RM/rl-baselines3-zoo>`_.
 
 .. code-block:: python
 
@@ -68,11 +72,10 @@ Example
   import numpy as np
 
   from stable_baselines3 import SAC
-  from stable_baselines3.sac import MlpPolicy
 
-  env = gym.make('Pendulum-v0')
+  env = gym.make("Pendulum-v0")
 
-  model = SAC(MlpPolicy, env, verbose=1)
+  model = SAC("MlpPolicy", env, verbose=1)
   model.learn(total_timesteps=10000, log_interval=4)
   model.save("sac_pendulum")
 
@@ -169,4 +172,7 @@ SAC Policies
   :noindex:
 
 .. autoclass:: CnnPolicy
+  :members:
+
+.. autoclass:: MultiInputPolicy
   :members:

@@ -1,3 +1,4 @@
+import warnings
 from typing import Any, Dict, List, Optional, Tuple, Type, Union
 
 import gym
@@ -5,10 +6,11 @@ import torch as th
 from torch import nn
 
 from stable_baselines3.common.distributions import SquashedDiagGaussianDistribution, StateDependentNoiseDistribution
-from stable_baselines3.common.policies import BasePolicy, ContinuousCritic, create_sde_features_extractor, register_policy
+from stable_baselines3.common.policies import BasePolicy, ContinuousCritic, register_policy
 from stable_baselines3.common.preprocessing import get_action_dim
 from stable_baselines3.common.torch_layers import (
     BaseFeaturesExtractor,
+    CombinedExtractor,
     FlattenExtractor,
     NatureCNN,
     create_mlp,
@@ -74,7 +76,6 @@ class Actor(BasePolicy):
         # Save arguments to re-create object at loading
         self.use_sde = use_sde
         self.sde_features_extractor = None
-        self.sde_net_arch = sde_net_arch
         self.net_arch = net_arch
         self.features_dim = features_dim
         self.activation_fn = activation_fn
@@ -84,24 +85,20 @@ class Actor(BasePolicy):
         self.full_std = full_std
         self.clip_mean = clip_mean
 
+        if sde_net_arch is not None:
+            warnings.warn("sde_net_arch is deprecated and will be removed in SB3 v2.4.0.", DeprecationWarning)
+
         action_dim = get_action_dim(self.action_space)
         latent_pi_net = create_mlp(features_dim, -1, net_arch, activation_fn)
         self.latent_pi = nn.Sequential(*latent_pi_net)
         last_layer_dim = net_arch[-1] if len(net_arch) > 0 else features_dim
 
         if self.use_sde:
-            latent_sde_dim = last_layer_dim
-            # Separate features extractor for gSDE
-            if sde_net_arch is not None:
-                self.sde_features_extractor, latent_sde_dim = create_sde_features_extractor(
-                    features_dim, sde_net_arch, activation_fn
-                )
-
             self.action_dist = StateDependentNoiseDistribution(
                 action_dim, full_std=full_std, use_expln=use_expln, learn_features=True, squash_output=True
             )
             self.mu, self.log_std = self.action_dist.proba_distribution_net(
-                latent_dim=last_layer_dim, latent_sde_dim=latent_sde_dim, log_std_init=log_std_init
+                latent_dim=last_layer_dim, latent_sde_dim=last_layer_dim, log_std_init=log_std_init
             )
             # Avoid numerical issues by limiting the mean of the Gaussian
             # to be in [-clip_mean, clip_mean]
@@ -112,8 +109,8 @@ class Actor(BasePolicy):
             self.mu = nn.Linear(last_layer_dim, action_dim)
             self.log_std = nn.Linear(last_layer_dim, action_dim)
 
-    def _get_data(self) -> Dict[str, Any]:
-        data = super()._get_data()
+    def _get_constructor_parameters(self) -> Dict[str, Any]:
+        data = super()._get_constructor_parameters()
 
         data.update(
             dict(
@@ -123,7 +120,6 @@ class Actor(BasePolicy):
                 use_sde=self.use_sde,
                 log_std_init=self.log_std_init,
                 full_std=self.full_std,
-                sde_net_arch=self.sde_net_arch,
                 use_expln=self.use_expln,
                 features_extractor=self.features_extractor,
                 clip_mean=self.clip_mean,
@@ -168,10 +164,7 @@ class Actor(BasePolicy):
         mean_actions = self.mu(latent_pi)
 
         if self.use_sde:
-            latent_sde = latent_pi
-            if self.sde_features_extractor is not None:
-                latent_sde = self.sde_features_extractor(features)
-            return mean_actions, self.log_std, dict(latent_sde=latent_sde)
+            return mean_actions, self.log_std, dict(latent_sde=latent_pi)
         # Unstructured exploration (Original implementation)
         log_std = self.log_std(latent_pi)
         # Original Implementation to cap the standard deviation
@@ -255,10 +248,10 @@ class SACPolicy(BasePolicy):
         )
 
         if net_arch is None:
-            if features_extractor_class == FlattenExtractor:
-                net_arch = [256, 256]
-            else:
+            if features_extractor_class == NatureCNN:
                 net_arch = []
+            else:
+                net_arch = [256, 256]
 
         actor_arch, critic_arch = get_actor_critic_arch(net_arch)
 
@@ -272,10 +265,13 @@ class SACPolicy(BasePolicy):
             "normalize_images": normalize_images,
         }
         self.actor_kwargs = self.net_args.copy()
+
+        if sde_net_arch is not None:
+            warnings.warn("sde_net_arch is deprecated and will be removed in SB3 v2.4.0.", DeprecationWarning)
+
         sde_kwargs = {
             "use_sde": use_sde,
             "log_std_init": log_std_init,
-            "sde_net_arch": sde_net_arch,
             "use_expln": use_expln,
             "clip_mean": clip_mean,
         }
@@ -316,8 +312,11 @@ class SACPolicy(BasePolicy):
 
         self.critic.optimizer = self.optimizer_class(critic_parameters, lr=lr_schedule(1), **self.optimizer_kwargs)
 
-    def _get_data(self) -> Dict[str, Any]:
-        data = super()._get_data()
+        # Target networks should always be in eval mode
+        self.critic_target.set_training_mode(False)
+
+    def _get_constructor_parameters(self) -> Dict[str, Any]:
+        data = super()._get_constructor_parameters()
 
         data.update(
             dict(
@@ -325,7 +324,6 @@ class SACPolicy(BasePolicy):
                 activation_fn=self.net_args["activation_fn"],
                 use_sde=self.actor_kwargs["use_sde"],
                 log_std_init=self.actor_kwargs["log_std_init"],
-                sde_net_arch=self.actor_kwargs["sde_net_arch"],
                 use_expln=self.actor_kwargs["use_expln"],
                 clip_mean=self.actor_kwargs["clip_mean"],
                 n_critics=self.critic_kwargs["n_critics"],
@@ -359,6 +357,18 @@ class SACPolicy(BasePolicy):
 
     def _predict(self, observation: th.Tensor, deterministic: bool = False) -> th.Tensor:
         return self.actor(observation, deterministic)
+
+    def set_training_mode(self, mode: bool) -> None:
+        """
+        Put the policy in either training or evaluation mode.
+
+        This affects certain modules, such as batch normalisation and dropout.
+
+        :param mode: if true, set to training mode, else set to evaluation mode
+        """
+        self.actor.set_training_mode(mode)
+        self.critic.set_training_mode(mode)
+        self.training = mode
 
 
 MlpPolicy = SACPolicy
@@ -435,5 +445,77 @@ class CnnPolicy(SACPolicy):
         )
 
 
+class MultiInputPolicy(SACPolicy):
+    """
+    Policy class (with both actor and critic) for SAC.
+
+    :param observation_space: Observation space
+    :param action_space: Action space
+    :param lr_schedule: Learning rate schedule (could be constant)
+    :param net_arch: The specification of the policy and value networks.
+    :param activation_fn: Activation function
+    :param use_sde: Whether to use State Dependent Exploration or not
+    :param log_std_init: Initial value for the log standard deviation
+    :param sde_net_arch: Network architecture for extracting features
+        when using gSDE. If None, the latent features from the policy will be used.
+        Pass an empty list to use the states as features.
+    :param use_expln: Use ``expln()`` function instead of ``exp()`` when using gSDE to ensure
+        a positive standard deviation (cf paper). It allows to keep variance
+        above zero and prevent it from growing too fast. In practice, ``exp()`` is usually enough.
+    :param clip_mean: Clip the mean output when using gSDE to avoid numerical instability.
+    :param features_extractor_class: Features extractor to use.
+    :param normalize_images: Whether to normalize images or not,
+         dividing by 255.0 (True by default)
+    :param optimizer_class: The optimizer to use,
+        ``th.optim.Adam`` by default
+    :param optimizer_kwargs: Additional keyword arguments,
+        excluding the learning rate, to pass to the optimizer
+    :param n_critics: Number of critic networks to create.
+    :param share_features_extractor: Whether to share or not the features extractor
+        between the actor and the critic (this saves computation time)
+    """
+
+    def __init__(
+        self,
+        observation_space: gym.spaces.Space,
+        action_space: gym.spaces.Space,
+        lr_schedule: Schedule,
+        net_arch: Optional[Union[List[int], Dict[str, List[int]]]] = None,
+        activation_fn: Type[nn.Module] = nn.ReLU,
+        use_sde: bool = False,
+        log_std_init: float = -3,
+        sde_net_arch: Optional[List[int]] = None,
+        use_expln: bool = False,
+        clip_mean: float = 2.0,
+        features_extractor_class: Type[BaseFeaturesExtractor] = CombinedExtractor,
+        features_extractor_kwargs: Optional[Dict[str, Any]] = None,
+        normalize_images: bool = True,
+        optimizer_class: Type[th.optim.Optimizer] = th.optim.Adam,
+        optimizer_kwargs: Optional[Dict[str, Any]] = None,
+        n_critics: int = 2,
+        share_features_extractor: bool = True,
+    ):
+        super(MultiInputPolicy, self).__init__(
+            observation_space,
+            action_space,
+            lr_schedule,
+            net_arch,
+            activation_fn,
+            use_sde,
+            log_std_init,
+            sde_net_arch,
+            use_expln,
+            clip_mean,
+            features_extractor_class,
+            features_extractor_kwargs,
+            normalize_images,
+            optimizer_class,
+            optimizer_kwargs,
+            n_critics,
+            share_features_extractor,
+        )
+
+
 register_policy("MlpPolicy", MlpPolicy)
 register_policy("CnnPolicy", CnnPolicy)
+register_policy("MultiInputPolicy", MultiInputPolicy)

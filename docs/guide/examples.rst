@@ -3,6 +3,11 @@
 Examples
 ========
 
+.. note::
+
+        These examples are only to demonstrate the use of the library and its functions, and the trained agents may not solve the environments. Optimized               hyperparameters can be found in the RL Zoo `repository <https://github.com/DLR-RM/rl-baselines3-zoo>`_.
+
+
 Try it online with Colab Notebooks!
 -----------------------------------
 
@@ -76,7 +81,10 @@ In the following example, we will train, save and load a DQN model on the Lunar 
   del model  # delete trained model to demonstrate loading
 
   # Load the trained agent
-  model = DQN.load("dqn_lunar")
+  # NOTE: if you have loading issue, you can pass `print_system_info=True`
+  # to compare the system on which the model was trained vs the current one
+  # model = DQN.load("dqn_lunar", env=env, print_system_info=True)
+  model = DQN.load("dqn_lunar", env=env)
 
   # Evaluate the agent
   # NOTE: If you use wrappers with your environment that modify rewards,
@@ -109,7 +117,7 @@ Multiprocessing: Unleashing the Power of Vectorized Environments
   import numpy as np
 
   from stable_baselines3 import PPO
-  from stable_baselines3.common.vec_env import SubprocVecEnv
+  from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
   from stable_baselines3.common.env_util import make_vec_env
   from stable_baselines3.common.utils import set_random_seed
 
@@ -136,8 +144,9 @@ Multiprocessing: Unleashing the Power of Vectorized Environments
       env = SubprocVecEnv([make_env(env_id, i) for i in range(num_cpu)])
 
       # Stable Baselines provides you with make_vec_env() helper
-      # which does exactly the previous steps for you:
-      # env = make_vec_env(env_id, n_envs=num_cpu, seed=0)
+      # which does exactly the previous steps for you.
+      # You can choose between `DummyVecEnv` (usually faster) and `SubprocVecEnv`
+      # env = make_vec_env(env_id, n_envs=num_cpu, seed=0, vec_env_cls=SubprocVecEnv)
 
       model = PPO('MlpPolicy', env, verbose=1)
       model.learn(total_timesteps=25000)
@@ -148,6 +157,27 @@ Multiprocessing: Unleashing the Power of Vectorized Environments
           obs, rewards, dones, info = env.step(action)
           env.render()
 
+
+Dict Observations
+-----------------
+
+You can use environments with dictionary observation spaces. This is useful in the case where one can't directly
+concatenate observations such as an image from a camera combined with a vector of servo sensor data (e.g., rotation angles).
+Stable Baselines3 provides ``SimpleMultiObsEnv`` as an example of this kind of of setting.
+The environment is a simple grid world but the observations for each cell come in the form of dictionaries.
+These dictionaries are randomly initilaized on the creation of the environment and contain a vector observation and an image observation.
+
+.. code-block:: python
+
+  from stable_baselines3 import PPO
+  from stable_baselines3.common.envs import SimpleMultiObsEnv
+
+
+  # Stable Baselines provides SimpleMultiObsEnv as an example environment with Dict observations
+  env = SimpleMultiObsEnv(random_start=False)
+
+  model = PPO("MultiInputPolicy", env, verbose=1)
+  model.learn(total_timesteps=1e5)
 
 
 Using Callback: Monitoring Training
@@ -312,6 +342,7 @@ will compute a running average and standard deviation of input features (it can 
 
 .. code-block:: python
 
+  import os
   import gym
   import pybullet_envs
 
@@ -335,9 +366,6 @@ will compute a running average and standard deviation of input features (it can 
   # To demonstrate loading
   del model, env
 
-  # Load the agent
-  model = PPO.load(log_dir + "ppo_halfcheetah")
-
   # Load the saved statistics
   env = DummyVecEnv([lambda: gym.make("HalfCheetahBulletEnv-v0")])
   env = VecNormalize.load(stats_path, env)
@@ -345,6 +373,9 @@ will compute a running average and standard deviation of input features (it can 
   env.training = False
   # reward normalization is not needed at test time
   env.norm_reward = False
+
+  # Load the agent
+  model = PPO.load(log_dir + "ppo_halfcheetah", env=env)
 
 
 Hindsight Experience Replay (HER)
@@ -374,7 +405,7 @@ The parking env is a goal-conditioned continuous control task, in which the vehi
   import highway_env
   import numpy as np
 
-  from stable_baselines3 import HER, SAC, DDPG, TD3
+  from stable_baselines3 import HerReplayBuffer, SAC, DDPG, TD3
   from stable_baselines3.common.noise import NormalActionNoise
 
   env = gym.make("parking-v0")
@@ -383,21 +414,23 @@ The parking env is a goal-conditioned continuous control task, in which the vehi
   n_sampled_goal = 4
 
   # SAC hyperparams:
-  model = HER(
-      "MlpPolicy",
+  model = SAC(
+      "MultiInputPolicy",
       env,
-      SAC,
-      n_sampled_goal=n_sampled_goal,
-      goal_selection_strategy="future",
-      # IMPORTANT: because the env is not wrapped with a TimeLimit wrapper
-      # we have to manually specify the max number of steps per episode
-      max_episode_length=100,
+      replay_buffer_class=HerReplayBuffer,
+      replay_buffer_kwargs=dict(
+        n_sampled_goal=n_sampled_goal,
+        goal_selection_strategy="future",
+        # IMPORTANT: because the env is not wrapped with a TimeLimit wrapper
+        # we have to manually specify the max number of steps per episode
+        max_episode_length=100,
+        online_sampling=True,
+      ),
       verbose=1,
       buffer_size=int(1e6),
       learning_rate=1e-3,
       gamma=0.95,
       batch_size=256,
-      online_sampling=True,
       policy_kwargs=dict(net_arch=[256, 256, 256]),
   )
 
@@ -405,7 +438,9 @@ The parking env is a goal-conditioned continuous control task, in which the vehi
   model.save("her_sac_highway")
 
   # Load saved model
-  model = HER.load("her_sac_highway", env=env)
+  # Because it needs access to `env.compute_reward()`
+  # HER must be loaded with the env
+  model = SAC.load("her_sac_highway", env=env)
 
   obs = env.reset()
 
@@ -477,12 +512,21 @@ By default, the replay buffer is not saved when calling ``model.save()``, in ord
 However, SB3 provides a ``save_replay_buffer()`` and ``load_replay_buffer()`` method to save it separately.
 
 
-.. image:: ../_static/img/colab-badge.svg
-   :target: https://colab.research.google.com/github/Stable-Baselines-Team/rl-colab-notebooks/blob/sb3/advanced_saving_loading.ipynb
-
 Stable-Baselines3 automatic creation of an environment for evaluation.
 For that, you only need to specify ``create_eval_env=True`` when passing the Gym ID of the environment while creating the agent.
 Behind the scene, SB3 uses an :ref:`EvalCallback <callbacks>`.
+
+
+.. note::
+
+	For training model after loading it, we recommend loading the replay buffer to ensure stable learning (for off-policy algorithms).
+	You also need to pass ``reset_num_timesteps=True`` to ``learn`` function which initializes the environment
+	and agent for training if a new environment was created since saving the model.
+
+
+.. image:: ../_static/img/colab-badge.svg
+   :target: https://colab.research.google.com/github/Stable-Baselines-Team/rl-colab-notebooks/blob/sb3/advanced_saving_loading.ipynb
+
 
 .. code-block:: python
 
@@ -519,7 +563,7 @@ Behind the scene, SB3 uses an :ref:`EvalCallback <callbacks>`.
   # Note: if you don't save the complete model with `model.save()`
   # you cannot continue training afterward
   policy = model.policy
-  policy.save("sac_policy_pendulum.pkl")
+  policy.save("sac_policy_pendulum")
 
   # Retrieve the environment
   env = model.get_env()
@@ -629,6 +673,32 @@ A2C policy gradient updates on the model.
       print(f"Iteration {iteration + 1:<3} Mean top fitness: {mean_fitness:.2f}")
       print(f"Best fitness: {top_candidates[0][1]:.2f}")
 
+
+SB3 and ProcgenEnv
+------------------
+
+Some environments like `Procgen <https://github.com/openai/procgen>`_ already produce a vectorized
+environment (see discussion in `issue #314 <https://github.com/DLR-RM/stable-baselines3/issues/314>`_). In order to use it with SB3, you must wrap it in a ``VecMonitor`` wrapper which will also allow
+to keep track of the agent progress.
+
+.. code-block:: python
+
+  from procgen import ProcgenEnv
+
+  from stable_baselines3 import PPO
+  from stable_baselines3.common.vec_env import VecExtractDictObs, VecMonitor
+
+  # ProcgenEnv is already vectorized
+  venv = ProcgenEnv(num_envs=2, env_name='starpilot')
+
+  # To use only part of the observation:
+  # venv = VecExtractDictObs(venv, "rgb")
+
+  # Wrap with a VecMonitor to collect stats and avoid errors
+  venv = VecMonitor(venv=venv)
+
+  model = PPO("MultiInputPolicy", venv, verbose=1)
+  model.learn(10000)
 
 
 Record a Video

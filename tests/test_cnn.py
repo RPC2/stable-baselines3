@@ -7,7 +7,7 @@ import torch as th
 from gym import spaces
 
 from stable_baselines3 import A2C, DQN, PPO, SAC, TD3
-from stable_baselines3.common.identity_env import FakeImageEnv
+from stable_baselines3.common.envs import FakeImageEnv
 from stable_baselines3.common.preprocessing import is_image_space, is_image_space_channels_first
 from stable_baselines3.common.utils import zip_strict
 from stable_baselines3.common.vec_env import VecTransposeImage, is_vecenv_wrapped
@@ -21,17 +21,28 @@ def test_cnn(tmp_path, model_class):
     # to check that the network handle it automatically
     env = FakeImageEnv(screen_height=40, screen_width=40, n_channels=1, discrete=model_class not in {SAC, TD3})
     if model_class in {A2C, PPO}:
-        kwargs = dict(n_steps=100)
+        kwargs = dict(n_steps=64)
     else:
         # Avoid memory error when using replay buffer
         # Reduce the size of the features
-        kwargs = dict(buffer_size=250, policy_kwargs=dict(features_extractor_kwargs=dict(features_dim=32)))
+        kwargs = dict(
+            buffer_size=250,
+            policy_kwargs=dict(features_extractor_kwargs=dict(features_dim=32)),
+            seed=1,
+        )
     model = model_class("CnnPolicy", env, **kwargs).learn(250)
 
     # FakeImageEnv is channel last by default and should be wrapped
     assert is_vecenv_wrapped(model.get_env(), VecTransposeImage)
 
     obs = env.reset()
+
+    # Test stochastic predict with channel last input
+    if model_class == DQN:
+        model.exploration_rate = 0.9
+
+    for _ in range(10):
+        model.predict(obs, deterministic=False)
 
     action, _ = model.predict(obs, deterministic=True)
 
@@ -87,6 +98,10 @@ def test_features_extractor_target_net(model_class, share_features_extractor):
     kwargs = dict(buffer_size=250, learning_starts=100, policy_kwargs=dict(features_extractor_kwargs=dict(features_dim=32)))
     if model_class != DQN:
         kwargs["policy_kwargs"]["share_features_extractor"] = share_features_extractor
+
+    # No delay for TD3 (changes when the actor and polyak update take place)
+    if model_class == TD3:
+        kwargs["policy_delay"] = 1
 
     model = model_class("CnnPolicy", env, seed=0, **kwargs)
 
@@ -232,7 +247,12 @@ def test_image_space_checks():
     assert not is_image_space(not_image_space)
 
     an_image_space = spaces.Box(0, 255, shape=(10, 10, 3), dtype=np.uint8)
-    assert is_image_space(an_image_space)
+    assert is_image_space(an_image_space, check_channels=False)
+    assert is_image_space(an_image_space, check_channels=True)
+
+    channel_first_image_space = spaces.Box(0, 255, shape=(3, 10, 10), dtype=np.uint8)
+    assert is_image_space(channel_first_image_space, check_channels=False)
+    assert is_image_space(channel_first_image_space, check_channels=True)
 
     an_image_space_with_odd_channels = spaces.Box(0, 255, shape=(10, 10, 5), dtype=np.uint8)
     assert is_image_space(an_image_space_with_odd_channels)

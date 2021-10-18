@@ -20,8 +20,8 @@ These algorithms will make it easier for the research community and industry to 
 Repository:
 https://github.com/DLR-RM/stable-baselines3
 
-Medium article:
-https://medium.com/@araffin/df87c4b2fc82
+Blog post:
+https://araffin.github.io/post/sb3/
 
 Documentation:
 https://stable-baselines3.readthedocs.io/en/master/
@@ -73,9 +73,9 @@ setup(
     packages=[package for package in find_packages() if package.startswith("stable_baselines3")],
     package_data={"stable_baselines3": ["py.typed", "version.txt"]},
     install_requires=[
-        "gym>=0.17",
+        "gym>=0.17,<0.20",  # gym 0.20 breaks atari-py behavior
         "numpy",
-        "torch>=1.4.0",
+        "torch>=1.8.1",
         # For saving models
         "cloudpickle",
         # For reading logs
@@ -94,10 +94,14 @@ setup(
             "pytype",
             # Lint code
             "flake8>=3.8",
+            # Find likely bugs
+            "flake8-bugbear",
             # Sort imports
             "isort>=5.0",
             # Reformat
             "black",
+            # For toy text Gym envs
+            "scipy>=1.4.1",
         ],
         "docs": [
             "sphinx",

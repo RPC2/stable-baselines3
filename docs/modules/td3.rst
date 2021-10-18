@@ -19,6 +19,7 @@ We recommend reading `OpenAI Spinning guide on TD3 <https://spinningup.openai.co
 
     MlpPolicy
     CnnPolicy
+    MultiInputPolicy
 
 
 Notes
@@ -49,11 +50,14 @@ Discrete      ❌      ✔️
 Box           ✔️       ✔️
 MultiDiscrete ❌      ✔️
 MultiBinary   ❌      ✔️
+Dict          ❌     ✔️
 ============= ====== ===========
 
 
 Example
 -------
+
+This example is only to demonstrate the use of the library and its functions, and the trained agents may not solve the environments. Optimized hyperparameters can be found in RL Zoo `repository <https://github.com/DLR-RM/rl-baselines3-zoo>`_.
 
 .. code-block:: python
 
@@ -61,16 +65,15 @@ Example
   import numpy as np
 
   from stable_baselines3 import TD3
-  from stable_baselines3.td3.policies import MlpPolicy
   from stable_baselines3.common.noise import NormalActionNoise, OrnsteinUhlenbeckActionNoise
 
-  env = gym.make('Pendulum-v0')
+  env = gym.make("Pendulum-v0")
 
   # The noise objects for TD3
   n_actions = env.action_space.shape[-1]
   action_noise = NormalActionNoise(mean=np.zeros(n_actions), sigma=0.1 * np.ones(n_actions))
 
-  model = TD3(MlpPolicy, env, action_noise=action_noise, verbose=1)
+  model = TD3("MlpPolicy", env, action_noise=action_noise, verbose=1)
   model.learn(total_timesteps=10000, log_interval=10)
   model.save("td3_pendulum")
   env = model.get_env()
@@ -165,4 +168,7 @@ TD3 Policies
   :noindex:
 
 .. autoclass:: CnnPolicy
+  :members:
+
+.. autoclass:: MultiInputPolicy
   :members:
