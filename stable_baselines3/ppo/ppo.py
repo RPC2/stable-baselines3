@@ -89,6 +89,8 @@ class PPO(OnPolicyAlgorithm):
         seed: Optional[int] = None,
         device: Union[th.device, str] = "auto",
         _init_setup_model: bool = True,
+        safety_critic = None,
+        safety_config = None
     ):
 
         super(PPO, self).__init__(
@@ -116,6 +118,8 @@ class PPO(OnPolicyAlgorithm):
                 spaces.MultiDiscrete,
                 spaces.MultiBinary,
             ),
+            safety_critic=safety_critic,
+            safety_config=safety_config
         )
 
         # Sanity check, otherwise it will lead to noisy gradient and NaN

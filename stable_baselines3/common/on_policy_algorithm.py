@@ -72,6 +72,8 @@ class OnPolicyAlgorithm(BaseAlgorithm):
         device: Union[th.device, str] = "auto",
         _init_setup_model: bool = True,
         supported_action_spaces: Optional[Tuple[gym.spaces.Space, ...]] = None,
+        safety_critic=None,
+        safety_config=None
     ):
 
         super(OnPolicyAlgorithm, self).__init__(
@@ -98,6 +100,10 @@ class OnPolicyAlgorithm(BaseAlgorithm):
         self.vf_coef = vf_coef
         self.max_grad_norm = max_grad_norm
         self.rollout_buffer = None
+        self.safety_critic = safety_critic
+        self.safety_config = safety_config
+        assert all(key in ['threshold', 'max_resample_times'] for \
+            key in self.safety_config), 'Missing needed info for safety_config'
 
         if _init_setup_model:
             self._setup_model()
@@ -168,6 +174,34 @@ class OnPolicyAlgorithm(BaseAlgorithm):
                 obs_tensor = obs_as_tensor(self._last_obs, self.device)
                 actions, values, log_probs = self.policy.forward(obs_tensor)
             actions = actions.cpu().numpy()
+
+            # Apply safety critic to action
+            if self.safety_critic is not None:
+                is_safe = self.safety_critic.obs_actions_is_safe(
+                    obs_tensor, actions, self.safety_config['threshold'])
+
+                resample_times = 0
+                while False in is_safe:
+                    resample_times += 1
+                    with th.no_grad():
+                        actions_resample, values, log_probs = self.policy.forward(obs_tensor)
+                    actions_resample = actions_resample.cpu().numpy()
+
+                    is_safe_multiplier = is_safe.int()
+                    # For actions that are originally safe, their corresponding
+                    # values in is_safe_multiplier is 1. These actions continue
+                    # to take their original values, whereas unsafe actions are
+                    # replaced by resampled ones.
+                    actions = actions * is_safe_multiplier + \
+                        actions_resample * (1 - is_safe_multiplier)
+                    is_safe = self.safety_critic.obs_actions_is_safe(
+                        obs_tensor, actions, self.safety_config['threshold'])
+
+                    if resample_times == self.safety_config['max_resample_times']:
+                        actions_resample = self.safety_critic.get_safest_action(obs_tensor)
+                        actions = actions * is_safe_multiplier + \
+                            actions_resample * (1 - is_safe_multiplier)
+                        break
 
             # Rescale and perform action
             clipped_actions = actions
