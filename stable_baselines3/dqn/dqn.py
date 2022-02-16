@@ -84,6 +84,7 @@ class DQN(OffPolicyAlgorithm):
         verbose: int = 0,
         seed: Optional[int] = None,
         device: Union[th.device, str] = "auto",
+        return_train_info: bool = False,
         _init_setup_model: bool = True,
     ):
 
@@ -123,6 +124,7 @@ class DQN(OffPolicyAlgorithm):
         # Linear schedule will be defined in `_setup_model()`
         self.exploration_schedule = None
         self.q_net, self.q_net_target = None, None
+        self.return_train_info = return_train_info
 
         if _init_setup_model:
             self._setup_model()
@@ -194,6 +196,9 @@ class DQN(OffPolicyAlgorithm):
 
         self.logger.record("train/n_updates", self._n_updates, exclude="tensorboard")
         self.logger.record("train/loss", np.mean(losses))
+
+        if self.return_train_info:
+            return np.mean(losses)
 
     def predict(
         self,

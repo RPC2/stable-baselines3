@@ -188,6 +188,8 @@ class OnPolicyAlgorithm(BaseAlgorithm):
                     actions_resample = actions_resample.cpu().numpy()
 
                     is_safe_multiplier = is_safe.int()
+                    if isinstance(is_safe_multiplier, th.Tensor):
+                        is_safe_multiplier = is_safe_multiplier.item()
                     # For actions that are originally safe, their corresponding
                     # values in is_safe_multiplier is 1. These actions continue
                     # to take their original values, whereas unsafe actions are
@@ -277,12 +279,14 @@ class OnPolicyAlgorithm(BaseAlgorithm):
             self._update_current_progress_remaining(self.num_timesteps, total_timesteps)
 
             # Display training infos
+            # TODO: Add safety score here.
             if log_interval is not None and iteration % log_interval == 0:
                 fps = int(self.num_timesteps / (time.time() - self.start_time))
                 self.logger.record("time/iterations", iteration, exclude="tensorboard")
                 if len(self.ep_info_buffer) > 0 and len(self.ep_info_buffer[0]) > 0:
                     self.logger.record("rollout/ep_rew_mean", safe_mean([ep_info["r"] for ep_info in self.ep_info_buffer]))
                     self.logger.record("rollout/ep_len_mean", safe_mean([ep_info["l"] for ep_info in self.ep_info_buffer]))
+                    self.logger.record("rollout/ep_unsafe_count", self.ep_unsafe_buffer)
                 self.logger.record("time/fps", fps)
                 self.logger.record("time/time_elapsed", int(time.time() - self.start_time), exclude="tensorboard")
                 self.logger.record("time/total_timesteps", self.num_timesteps, exclude="tensorboard")
