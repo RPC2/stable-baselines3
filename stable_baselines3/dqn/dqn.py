@@ -198,7 +198,7 @@ class DQN(OffPolicyAlgorithm):
         self.logger.record("train/loss", np.mean(losses))
 
         if self.return_train_info:
-            return np.mean(losses)
+            return self.policy, np.mean(losses), replay_data
 
     def predict(
         self,

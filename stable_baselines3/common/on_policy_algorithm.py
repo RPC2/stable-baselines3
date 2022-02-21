@@ -173,7 +173,6 @@ class OnPolicyAlgorithm(BaseAlgorithm):
                 # Convert to pytorch tensor or to TensorDict
                 obs_tensor = obs_as_tensor(self._last_obs, self.device)
                 actions, values, log_probs = self.policy.forward(obs_tensor)
-            actions = actions.cpu().numpy()
 
             # Apply safety critic to action
             if self.safety_critic is not None:
@@ -185,11 +184,8 @@ class OnPolicyAlgorithm(BaseAlgorithm):
                     resample_times += 1
                     with th.no_grad():
                         actions_resample, values, log_probs = self.policy.forward(obs_tensor)
-                    actions_resample = actions_resample.cpu().numpy()
 
                     is_safe_multiplier = is_safe.int()
-                    if isinstance(is_safe_multiplier, th.Tensor):
-                        is_safe_multiplier = is_safe_multiplier.item()
                     # For actions that are originally safe, their corresponding
                     # values in is_safe_multiplier is 1. These actions continue
                     # to take their original values, whereas unsafe actions are
@@ -204,6 +200,8 @@ class OnPolicyAlgorithm(BaseAlgorithm):
                         actions = actions * is_safe_multiplier + \
                             actions_resample * (1 - is_safe_multiplier)
                         break
+
+            actions = actions.cpu().numpy()
 
             # Rescale and perform action
             clipped_actions = actions
