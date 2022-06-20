@@ -163,6 +163,8 @@ class DQN(OffPolicyAlgorithm):
         for _ in range(gradient_steps):
             # Sample replay buffer
             replay_data = self.replay_buffer.sample(batch_size, env=self._vec_normalize_env)
+            dones = replay_data.dones.unsqueeze(dim=1)
+            rewards = replay_data.rewards.unsqueeze(dim=1)
 
             with th.no_grad():
                 # Compute the next Q-values using the target network
@@ -172,7 +174,7 @@ class DQN(OffPolicyAlgorithm):
                 # Avoid potential broadcast issue
                 next_q_values = next_q_values.reshape(-1, 1)
                 # 1-step TD target
-                target_q_values = replay_data.rewards + (1 - replay_data.dones) * self.gamma * next_q_values
+                target_q_values = rewards + (1 - dones) * self.gamma * next_q_values
 
             # Get current Q-values estimates
             current_q_values = self.q_net(replay_data.observations)
@@ -194,11 +196,12 @@ class DQN(OffPolicyAlgorithm):
         # Increase update counter
         self._n_updates += gradient_steps
 
-        self.logger.record("train/n_updates", self._n_updates, exclude="tensorboard")
-        self.logger.record("train/loss", np.mean(losses))
+        self.logger.record("dqn_train/lr", self.lr_schedule(self._current_progress_remaining))
+        self.logger.record("dqn_train/n_updates", self._n_updates, exclude="tensorboard")
+        self.logger.record("dqn_train/loss", np.mean(losses))
 
         if self.return_train_info:
-            return self.policy, np.mean(losses), replay_data
+            return np.mean(losses), replay_data
 
     def predict(
         self,

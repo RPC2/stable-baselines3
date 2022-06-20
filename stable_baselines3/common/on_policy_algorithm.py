@@ -102,8 +102,10 @@ class OnPolicyAlgorithm(BaseAlgorithm):
         self.rollout_buffer = None
         self.safety_critic = safety_critic
         self.safety_config = safety_config
-        assert all(key in ['threshold', 'max_resample_times'] for \
-            key in self.safety_config), 'Missing needed info for safety_config'
+        self.critic_decision_count = 0
+        if self.safety_critic is not None:
+            assert all(key in ['threshold', 'max_resample_times'] for \
+                key in self.safety_config), 'Missing needed info for safety_config'
 
         if _init_setup_model:
             self._setup_model()
@@ -127,7 +129,6 @@ class OnPolicyAlgorithm(BaseAlgorithm):
             self.observation_space,
             self.action_space,
             self.lr_schedule,
-            use_sde=self.use_sde,
             **self.policy_kwargs  # pytype:disable=not-instantiable
         )
         self.policy = self.policy.to(self.device)
@@ -199,6 +200,7 @@ class OnPolicyAlgorithm(BaseAlgorithm):
                         actions_resample = self.safety_critic.get_safest_action(obs_tensor)
                         actions = actions * is_safe_multiplier + \
                             actions_resample * (1 - is_safe_multiplier)
+                        self.critic_decision_count +=1
                         break
 
             actions = actions.cpu().numpy()
@@ -277,7 +279,6 @@ class OnPolicyAlgorithm(BaseAlgorithm):
             self._update_current_progress_remaining(self.num_timesteps, total_timesteps)
 
             # Display training infos
-            # TODO: Add safety score here.
             if log_interval is not None and iteration % log_interval == 0:
                 fps = int(self.num_timesteps / (time.time() - self.start_time))
                 self.logger.record("time/iterations", iteration, exclude="tensorboard")
@@ -285,6 +286,7 @@ class OnPolicyAlgorithm(BaseAlgorithm):
                     self.logger.record("rollout/ep_rew_mean", safe_mean([ep_info["r"] for ep_info in self.ep_info_buffer]))
                     self.logger.record("rollout/ep_len_mean", safe_mean([ep_info["l"] for ep_info in self.ep_info_buffer]))
                     self.logger.record("rollout/ep_unsafe_count", self.ep_unsafe_buffer)
+                    self.logger.record("rollout/critic_decision_count", self.critic_decision_count)
                 self.logger.record("time/fps", fps)
                 self.logger.record("time/time_elapsed", int(time.time() - self.start_time), exclude="tensorboard")
                 self.logger.record("time/total_timesteps", self.num_timesteps, exclude="tensorboard")

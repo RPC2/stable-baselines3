@@ -102,6 +102,9 @@ def preprocess_obs(
         if is_image_space(observation_space) and normalize_images:
             return obs.float() / 255.0
         return obs.float()
+        # else:
+        #     high = np.unique(observation_space.high.flatten())[0]
+        #     return obs.float() / float(high)
 
     elif isinstance(observation_space, spaces.Discrete):
         # One hot encoding and convert to float to avoid errors
