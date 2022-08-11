@@ -287,6 +287,8 @@ class OnPolicyAlgorithm(BaseAlgorithm):
                     self.logger.record("rollout/ep_len_mean", safe_mean([ep_info["l"] for ep_info in self.ep_info_buffer]))
                     self.logger.record("rollout/ep_unsafe_count", self.ep_unsafe_buffer)
                     self.logger.record("rollout/critic_decision_count", self.critic_decision_count)
+                    if hasattr(self, 'ep_info_buffer'):
+                        self.logger.record("rollout/ep_original_env_reward", safe_mean([ori_rew for ori_rew in self.ep_original_env_rew]))
                 self.logger.record("time/fps", fps)
                 self.logger.record("time/time_elapsed", int(time.time() - self.start_time), exclude="tensorboard")
                 self.logger.record("time/total_timesteps", self.num_timesteps, exclude="tensorboard")
